@@ -3,15 +3,16 @@
 SET in_orbit to FALSE.
 SET done_staging to TRUE.
 SET launched to FALSE.
-SET abort to FALSE.
+SET emergency to FALSE.
 //SET g TO KERBIN:MU / KERBIN:RADIUS^2.
 LOCK accvec TO SHIP:SENSORS:ACC - SHIP:SENSORS:GRAV.
 LOCK gforce TO accvec:MAG / SHIP:SENSORS:GRAV:MAG.
+LOCK pitch TO 90 - vectorangle(UP:FOREVECTOR, FACING:FOREVECTOR).
 
 function adjust_throttle {
     parameter x.
 
-    set throttle_value to x.
+    SET throttle_value TO x.
 
     LOCK THROTTLE TO throttle_value.
     WAIT 2. // give throttle time to adjust.
@@ -22,6 +23,7 @@ function emergency_abort {
     PRINT "ABORT ABORT ABORT.".
     LOCK STEERING TO HEADING(90,45). // east, 45 degrees pitch.
     WAIT 5.
+    adjust_throttle(0).
     LOCK STEERING TO SRFRETROGRADE.
     WAIT UNTIL SHIP:ALTITUDE < 1000.
     PRINT "Deploying parachutes.".
@@ -36,45 +38,59 @@ function staging_sequence {
     WAIT 2.
     SET done_staging to TRUE.
     SET launched to TRUE.
-    WAIT UNTIL STAGE:LIQUIDFUEL <= 0.01 OR abort.
-    IF ABORT {
+    WAIT UNTIL STAGE:LIQUIDFUEL <= 0.01 OR emergency.
+    IF emergency {
         emergency_abort().
     } ELSE IF NOT in_orbit {
+        PRINT "All systems nominal. Staging.".
         staging_sequence().
     }
 }
 
 WHEN SHIP:ALTITUDE > 7000 THEN {
-    PRINT "Starting turn.  Aiming to 70 degree pitch.".
-    LOCK STEERING TO HEADING(90,70). // east, 70 degrees pitch.
+    IF NOT emergency {
+        PRINT "Starting turn.  Aiming to 70 degree pitch.".
+        LOCK STEERING TO HEADING(90,70). // east, 70 degrees pitch.
+    }
 }
 WHEN SHIP:ALTITUDE > 14000 THEN {
-    PRINT "Starting turn.  Aiming to 45 degree pitch.".
-    LOCK STEERING TO HEADING(90,45). // east, 45 degrees pitch.
+    IF NOT emergency {
+        PRINT "Starting turn.  Aiming to 45 degree pitch.".
+        LOCK STEERING TO HEADING(90,45). // east, 45 degrees pitch.
+    }
 }
 WHEN SHIP:ALTITUDE > 40000 THEN {
-    PRINT "Starting flat part.  Aiming to horizon.".
-    LOCK STEERING TO HEADING(90,0). // east, horizontal.
+    IF NOT emergency {
+        PRINT "Starting flat part.  Aiming to horizon.".
+        LOCK STEERING TO HEADING(90,0). // east, horizontal.
+    }
 }
 WHEN SHIP:APOAPSIS > 90000 THEN {
-    PRINT "Engines disengaged. Coasting to Apoapsis.".
-    adjust_throttle(0.0).
+    IF NOT emergency {
+        PRINT "Engines disengaged. Coasting to Apoapsis.".
+        adjust_throttle(0.0).
+    }
 }
 WHEN SHIP:ALTITUDE > 85000 THEN {
-    PRINT "Engines engaged. Circularizing orbit.".
-    adjust_throttle(1.0).
+    IF NOT emergency {
+        PRINT "Engines engaged. Circularizing orbit.".
+        adjust_throttle(1.0).
+    }
 }
 WHEN SHIP:PERIAPSIS > 85000 THEN {
-    PRINT "Engines disengaged. Orbit Circularized.".
-    adjust_throttle(0.0).
-    SET in_orbit to TRUE.
+    IF NOT emergency {
+        PRINT "Engines disengaged. Orbit Circularized.".
+        adjust_throttle(0.0).
+        SET in_orbit to TRUE.
+    }
 }
-WHEN done_staging AND launched AND gforce < 1.0 THEN {
+WHEN done_staging AND launched AND (gforce < 1.0 OR pitch < -5) THEN {
     PRINT "G-FORCE: " + gforce.
-    //SET abort TO TRUE.
+    PRINT "PITCH: " + pitch.
+    SET emergency TO TRUE.
 }
 WHEN TRUE THEN {
-    PRINT "G-FORCE: " + gforce.
+    //PRINT "G-FORCE: " + gforce.
     PRESERVE.
 }
 
