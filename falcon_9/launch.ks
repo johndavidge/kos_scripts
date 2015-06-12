@@ -5,6 +5,7 @@ SET done_staging to TRUE.
 SET launched to FALSE.
 SET emergency to FALSE.
 SET coasting to FALSE.
+SET circularize to FALSE.
 //SET g TO KERBIN:MU / KERBIN:RADIUS^2.
 LOCK accvec TO SHIP:SENSORS:ACC - SHIP:SENSORS:GRAV.
 LOCK gforce TO accvec:MAG / SHIP:SENSORS:GRAV:MAG.
@@ -17,6 +18,10 @@ function adjust_throttle {
 
     LOCK THROTTLE TO throttle_value.
     WAIT 2. // give throttle time to adjust.
+
+    IF throttle_value > 0 {
+        SET coasting TO FALSE.
+    }
 }
 
 function emergency_abort {
@@ -34,74 +39,72 @@ function emergency_abort {
 
 function staging_sequence {
     SET done_staging to FALSE.
-    PRINT "No liquidfuel.  Attempting to stage.".
+    PRINT "All systems nominal. Staging.".
     STAGE.
     WAIT 2.
     SET done_staging to TRUE.
     SET launched to TRUE.
-    WAIT UNTIL STAGE:LIQUIDFUEL <= 0.01 OR emergency.
+    PRINT "FUEL: " + STAGE:LIQUIDFUEL.
+    WAIT UNTIL STAGE:LIQUIDFUEL <= 0.01 OR emergency OR circularize.
     IF emergency {
         emergency_abort().
+    } ELSE IF circularize {
+        adjust_throttle(1).
+        PRINT "Engines engaged. Circularizing orbit.".
+        SET circularize TO FALSE.
+        WAIT UNTIL STAGE:LIQUIDFUEL <= 0.01 OR emergency.
+        IF emergency {
+            emergency_abort().
+        } ELSE IF NOT in_orbit {
+            PRINT "Stage fuel empty.".
+            staging_sequence().
+        }
     } ELSE IF NOT in_orbit {
-        PRINT "All systems nominal. Staging.".
+        PRINT "Stage fuel empty.".
         staging_sequence().
     }
 }
 
-WHEN SHIP:ALTITUDE > 2500 THEN {
-    IF NOT emergency {
-        PRINT "Starting turn.  Aiming to 70 degree pitch.".
-        LOCK STEERING TO HEADING(90,70). // east, 70 degrees pitch.
-    }
+WHEN SHIP:ALTITUDE > 2500 AND NOT emergency THEN {
+    PRINT "Starting turn.  Aiming to 70 degree pitch.".
+    LOCK STEERING TO HEADING(90,70). // east, 70 degrees pitch.
 }
-WHEN SHIP:ALTITUDE > 7000 THEN {
-    IF NOT emergency {
-        PRINT "Starting turn.  Aiming to 45 degree pitch.".
-        LOCK STEERING TO HEADING(90,45). // east, 45 degrees pitch.
-    }
+WHEN SHIP:ALTITUDE > 7000 AND NOT emergency THEN {
+    PRINT "Starting turn.  Aiming to 45 degree pitch.".
+    LOCK STEERING TO HEADING(90,45). // east, 45 degrees pitch.
 }
-WHEN SHIP:ALTITUDE > 40000 THEN {
-    IF NOT emergency {
-        PRINT "Starting turn.  Aiming to 10 degree pitch.".
-        LOCK STEERING TO HEADING(90,10). // east, 10 degrees pitch.
-    }
+WHEN SHIP:ALTITUDE > 40000 AND NOT emergency THEN {
+    PRINT "Starting turn.  Aiming to 10 degree pitch.".
+    LOCK STEERING TO HEADING(90,10). // east, 10 degrees pitch.
 }
-WHEN SHIP:ALTITUDE > 50000 THEN {
-    IF NOT emergency {
-        PRINT "Starting flat part.  Aiming towards horizon.".
-        LOCK STEERING TO HEADING(90,00). // east, 0 degrees pitch.
-    }
+WHEN SHIP:ALTITUDE > 50000 AND NOT emergency THEN {
+    PRINT "Starting flat part.  Aiming towards horizon.".
+    LOCK STEERING TO HEADING(90,00). // east, 0 degrees pitch.
 }
-WHEN SHIP:APOAPSIS > 90000 THEN {
-    IF NOT emergency {
-        PRINT "Engines disengaged. Coasting to Apoapsis.".
-        SET coasting TO TRUE.
-        adjust_throttle(0.0).
-    }
+WHEN SHIP:APOAPSIS > 90000 AND NOT emergency THEN {
+    PRINT "Engines disengaged. Coasting to Apoapsis.".
+    SET coasting TO TRUE.
 }
-WHEN SHIP:ALTITUDE > 85000 THEN {
-    IF NOT emergency {
-        PRINT "Engines engaged. Circularizing orbit.".
-        adjust_throttle(1.0).
-        SET coasting TO FALSE.
-    }
+WHEN SHIP:ALTITUDE > 85000 AND NOT emergency THEN {
+    SET circularize TO TRUE.
 }
-WHEN SHIP:PERIAPSIS > 85000 THEN {
-    IF NOT emergency {
-        PRINT "Engines disengaged. Orbit Circularized.".
-        adjust_throttle(0.0).
-        SET in_orbit to TRUE.
-    }
+WHEN SHIP:PERIAPSIS > 85000 AND NOT emergency THEN {
+    PRINT "Engines disengaged. Orbit Circularized.".
+    SET in_orbit to TRUE.
+    adjust_throttle(0).
 }
 WHEN done_staging AND launched AND NOT coasting AND (gforce < 1.0 OR pitch < -5) THEN {
     PRINT "G-FORCE: " + gforce.
     PRINT "PITCH: " + pitch.
     SET emergency TO TRUE.
 }
-//WHEN TRUE THEN {
-    //PRINT "G-FORCE: " + gforce.
-//    PRESERVE.
-//}
+WHEN coasting AND NOT emergency THEN {
+    adjust_throttle(0).
+}
+WHEN STAGE:LIQUIDFUEL < 100 THEN {
+    PRINT "FUEL: " + STAGE:LIQUIDFUEL.
+    PRESERVE.
+}
 
 SET countdown TO 1.
 PRINT "Counting Down:".
